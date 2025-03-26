@@ -21,6 +21,9 @@ from .content_generator import ContentGenerator
 from .twitter_handler import TwitterHandler, RateLimitError
 from .db_manager import DatabaseManager
 
+# Ensure log directory exists
+LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
 # Configure logging
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),
@@ -112,18 +115,26 @@ class TwitterManager:
         
         return False
 
-    def run_scheduled(self) -> None:
-        """Run the Twitter Manager on a schedule."""
-        logger.info("Starting scheduled Twitter Manager")
+    def run_scheduled(self, max_posts: int = 5) -> None:
+        """
+        Run the Twitter Manager on a schedule with a maximum post limit.
         
-        # Schedule the posting job
-        schedule.every(POST_INTERVAL_SECONDS).seconds.do(self.generate_and_post)
+        Args:
+            max_posts: Maximum number of successful posts before exiting
+        """
+        logger.info(f"Starting Twitter Manager (max posts: {max_posts})")
+        
+        posts_made = 0
         
         try:
-            while True:
-                schedule.run_pending()
-                time.sleep(1)  # Check schedule every second
+            while posts_made < max_posts:
+                if self.generate_and_post():
+                    posts_made += 1
+                    logger.info(f"Made {posts_made}/{max_posts} posts")
+                time.sleep(POST_INTERVAL_SECONDS)
                 
+            logger.info(f"Reached maximum posts limit ({max_posts})")
+            
         except KeyboardInterrupt:
             logger.info("Twitter Manager stopped by user")
             
@@ -150,8 +161,10 @@ class TwitterManager:
 def main():
     """Main entry point for the Twitter Manager."""
     try:
+        logger.info("Starting Twitter Manager application")
         manager = TwitterManager()
-        manager.run_scheduled()
+        manager.run_scheduled(max_posts=5)  # Set limit to 5 posts
+        logger.info("Twitter Manager completed successfully")
         
     except Exception as e:
         logger.error(f"Application error: {str(e)}")
