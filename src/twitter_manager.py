@@ -6,13 +6,9 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-import schedule
-
 from .config import (
-    POST_INTERVAL_SECONDS,
     MAX_RETRIES,
     RETRY_DELAY_SECONDS,
-    LOG_PATH,
     LOG_FORMAT,
     LOG_LEVEL,
     validate_config
@@ -21,19 +17,25 @@ from .content_generator import ContentGenerator
 from .twitter_handler import TwitterHandler, RateLimitError
 from .db_manager import DatabaseManager
 
-# Ensure log directory exists
-LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+# Set up logging directory
+script_dir = Path(__file__).parent.parent
+logs_dir = script_dir / "logs"
+logs_dir.mkdir(parents=True, exist_ok=True)
+
+# Set up log file path with timestamp
+log_file = logs_dir / f"twitter_manager_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
 # Configure logging
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),
     format=LOG_FORMAT,
     handlers=[
-        logging.FileHandler(LOG_PATH),
+        logging.FileHandler(log_file),
         logging.StreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger(__name__)
+logger.info(f"Logging to: {log_file}")
 
 class TwitterManager:
     """Manages the automated Twitter posting process."""
@@ -115,31 +117,25 @@ class TwitterManager:
         
         return False
 
-    def run_scheduled(self, max_posts: int = 5) -> None:
+    def run_single(self) -> bool:
         """
-        Run the Twitter Manager on a schedule with a maximum post limit.
+        Run a single execution of the Twitter Manager.
         
-        Args:
-            max_posts: Maximum number of successful posts before exiting
+        Returns:
+            bool: True if post was successful, False otherwise
         """
-        logger.info(f"Starting Twitter Manager (max posts: {max_posts})")
-        
-        posts_made = 0
+        logger.info("Starting Twitter Manager single execution")
         
         try:
-            while posts_made < max_posts:
-                if self.generate_and_post():
-                    posts_made += 1
-                    logger.info(f"Made {posts_made}/{max_posts} posts")
-                time.sleep(POST_INTERVAL_SECONDS)
-                
-            logger.info(f"Reached maximum posts limit ({max_posts})")
-            
-        except KeyboardInterrupt:
-            logger.info("Twitter Manager stopped by user")
+            success = self.generate_and_post()
+            if success:
+                logger.info("Successfully posted tweet")
+            else:
+                logger.warning("Failed to post tweet")
+            return success
             
         except Exception as e:
-            logger.error(f"Twitter Manager crashed: {str(e)}")
+            logger.error(f"Twitter Manager execution failed: {str(e)}")
             raise
 
     def get_stats(self) -> dict:
@@ -161,10 +157,20 @@ class TwitterManager:
 def main():
     """Main entry point for the Twitter Manager."""
     try:
+        # Add script directory to Python path for absolute imports
+        script_dir = Path(__file__).parent.parent
+        sys.path.insert(0, str(script_dir))
+
         logger.info("Starting Twitter Manager application")
         manager = TwitterManager()
-        manager.run_scheduled(max_posts=5)  # Set limit to 5 posts
-        logger.info("Twitter Manager completed successfully")
+        success = manager.run_single()
+        
+        if success:
+            logger.info("Twitter Manager completed successfully")
+            sys.exit(0)
+        else:
+            logger.error("Twitter Manager failed to post")
+            sys.exit(1)
         
     except Exception as e:
         logger.error(f"Application error: {str(e)}")

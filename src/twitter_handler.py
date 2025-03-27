@@ -81,6 +81,7 @@ class TwitterHandler:
             
             # Handle rate limits and other Twitter API errors
             if hasattr(e, 'response') and e.response.status_code == 429:  # Rate limit exceeded
+                print(e)
                 self._handle_rate_limit(e)
             raise
 
